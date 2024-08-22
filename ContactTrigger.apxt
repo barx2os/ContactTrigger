@@ -1,0 +1,80 @@
+trigger ContactTrigger on Contact (after delete, after insert, after update, after undelete) {
+    
+    Set<Id> storeAccId = new Set<Id>();
+    Set<Id> storeOldAccId = new Set<Id>();
+    List<Account> lstAcc = new List<Account>();
+
+    if (trigger.isExecuting && trigger.isAfter) {
+
+        if (trigger.isDelete) {
+            // Handle delete scenario
+            for (Contact con : trigger.old) {
+                if (con.AccountId != null) {
+                    storeAccId.add(con.AccountId);
+                }
+            }
+        } else if (trigger.isInsert || trigger.isUndelete) {
+            // Handle insert and undelete scenarios
+            for (Contact con : trigger.new) {
+                if (con.AccountId != null) {
+                    storeAccId.add(con.AccountId);
+                }
+            }
+        } else if (trigger.isUpdate) {
+            // Handle update scenario
+            for (Contact con : trigger.new) {
+                if (con.AccountId != null) {
+                    storeAccId.add(con.AccountId);
+                }
+            }
+
+            // Handle the case where AccountId has changed
+            for (Contact con : trigger.old) {
+                if (con.AccountId != null && con.AccountId != trigger.newMap.get(con.Id).AccountId) {
+                    storeOldAccId.add(con.AccountId);
+                }
+            }
+
+            // Merge storeOldAccId with storeAccId to ensure both old and new accounts are updated
+            storeAccId.addAll(storeOldAccId);
+        }
+
+        // Get the count of contacts grouped by AccountId
+        AggregateResult[] storeQuery = [
+            SELECT Count(Id) cid, AccountId aid 
+            FROM Contact 
+            WHERE AccountId IN :storeAccId 
+            GROUP BY AccountId
+        ];
+
+        // Map to hold counts
+        Map<Id, Integer> contactCountMap = new Map<Id, Integer>();
+
+        // Populate the map with query results
+        for (AggregateResult ar : storeQuery) {
+            contactCountMap.put((Id)ar.get('aid'), (Integer)ar.get('cid'));
+        }
+
+        // Fetch all relevant Account records in one query
+        List<Account> accountsToUpdate = [
+            SELECT Id, Name, Count_Contact__c 
+            FROM Account 
+            WHERE Id IN :storeAccId
+        ];
+
+        // Update the contact count for each Account
+        for (Account acc : accountsToUpdate) {
+            Integer countCon = contactCountMap.get(acc.Id);
+            if (countCon == null) {
+                countCon = 0; // Handle accounts with no remaining contacts
+            }
+            acc.Count_Contact__c = countCon;
+            lstAcc.add(acc);
+            System.debug('Updated Account: ' + acc.Name + ' with contact count: ' + countCon);
+        }
+
+        if (!lstAcc.isEmpty()) {
+            update lstAcc;
+        }
+    }
+}
