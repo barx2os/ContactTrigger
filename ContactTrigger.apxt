@@ -78,3 +78,12 @@ trigger ContactTrigger on Contact (after delete, after insert, after update, aft
         }
     }
 }
+
+/*
+ * If you don't want to use AggregateResult:
+ * List<Account> affectedAccounts = [SELECT Id, (SELECT Id FROM Contacts) FROM Account WHERE Id = :storeAccId];
+ * if(!affectedAccounts.isEmpty()){
+ * for(Account acc : affectedAccounts){
+ * Integer CountContact = acc.Contacts.size();
+ * acc.Count_Contact__c = CountContact;
+ * lstAcc.add(acc);*/
